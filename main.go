@@ -491,17 +491,18 @@ type vmConcierge struct {
 }
 
 func (v *vmConcierge) StartVm(req []byte, fds []dbus.UnixFD) ([]byte, *dbus.Error) {
-	log.Printf("StartVm called fd_count=%d", len(fds))
-	markSessionReady()
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		v.conn.Emit(conciergeObj, conciergeIface+".VmStartedSignal", encodeVmStartedSignal())
-		log.Printf("StartVm: emitted VmStartedSignal")
-		time.Sleep(800 * time.Millisecond)
-		v.conn.Emit(ciceroneObj, ciceroneIface+".ContainerStarted", encodeContainerStarted())
-		log.Printf("StartVm: emitted ContainerStarted")
-	}()
-	return encodeStartVmResponse(), nil
+    fields := decodeStringFields(req)
+    log.Printf("StartVm called fd_count=%d strings=%v owner=%q", len(fds), fields, currentOwnerID())
+    markSessionReady()
+    go func() {
+        time.Sleep(200 * time.Millisecond)
+        if err := v.conn.Emit(conciergeObj, conciergeIface+".VmStartedSignal", encodeVmStartedSignal()); err != nil {
+            log.Printf("StartVm: VmStartedSignal emit FAILED: %v", err)
+        } else {
+            log.Printf("StartVm: emitted VmStartedSignal owner=%q vm=%q", currentOwnerID(), vmName)
+        }
+    }()
+    return encodeStartVmResponse(), nil
 }
 
 func (v *vmConcierge) GetVmLaunchAllowed(req []byte) ([]byte, *dbus.Error) {
@@ -685,9 +686,19 @@ func (c *vmCicerone) StartLxd(req []byte) ([]byte, *dbus.Error) {
 }
 
 func (c *vmCicerone) StartLxdContainer(req []byte) ([]byte, *dbus.Error) {
-	learnOwnerID("StartLxdContainer", decodeStringFields(req))
-	log.Printf("StartLxdContainer called")
-	return appendUint64(nil, 1, 2), nil
+    fields := decodeStringFields(req)
+    log.Printf("StartLxdContainer called strings=%v current_owner=%q", fields, currentOwnerID())
+    learnOwnerID("StartLxdContainer", fields)
+    go func() {
+        time.Sleep(300 * time.Millisecond)
+        log.Printf("ContainerStarted: emitting owner=%q vm=%q container=%q", currentOwnerID(), vmName, containerName)
+        if err := c.conn.Emit(ciceroneObj, ciceroneIface+".ContainerStarted", encodeContainerStarted()); err != nil {
+            log.Printf("ContainerStarted emit FAILED: %v", err)
+        } else {
+            log.Printf("ContainerStarted emitted successfully")
+        }
+    }()
+    return appendUint64(nil, 1, 2), nil
 }
 
 func (c *vmCicerone) CreateLxdContainer(req []byte) ([]byte, *dbus.Error) {
