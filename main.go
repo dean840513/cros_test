@@ -546,8 +546,9 @@ func (v *vmConcierge) CreateDiskImage(req []byte, fds []dbus.UnixFD) ([]byte, *d
 }
 
 type vmCicerone struct {
-	mu   sync.RWMutex
-	apps []desktopApp
+    conn *dbus.Conn
+    mu   sync.RWMutex
+    apps []desktopApp
 }
 
 func (c *vmCicerone) ListRunningContainers(req []byte) ([]byte, *dbus.Error) {
@@ -884,7 +885,7 @@ func main() {
 	log.Printf("registered %s, %s, %s, %s, %s", conciergeBus, ciceronebus, dlcServiceBus, debugdBus, imageLoaderBus)
 
 	log.Printf("appDirs = %v", appDirs)
-	cicerone := &vmCicerone{}
+	cicerone := &vmCicerone{conn: conn}
 	conn.Export(cicerone, ciceroneObj, ciceroneIface)
 	conn.Export(&vmConcierge{conn: conn}, conciergeObj, conciergeIface)
 	conn.Export(&dlcService{conn: conn}, dlcServiceObj, dlcServiceIface)
