@@ -1,0 +1,21 @@
+name: Build openFyde Crostini Bridge
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Compile static Linux amd64 binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o openfyde-crostini-bridge ./main.go
+          file openfyde-crostini-bridge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openfyde-crostini-bridge-linux-amd64
+          path: openfyde-crostini-bridge
