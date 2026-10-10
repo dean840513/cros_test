@@ -260,15 +260,16 @@ func encodeListRunningContainersResponse() []byte {
 
 func encodeStartVmResponse() []byte {
 	b := appendBool(nil, 1, true) // success = true
-	b = appendUint64(b, 4, 1)     // status = VM_STATUS_RUNNING (skip wait for TremplinStarted)
+	b = appendBytes(b, 3, encodeVmInfo())
+	b = appendUint64(b, 4, 1) // status = VM_STATUS_RUNNING
 	return b
 }
 
 func encodeVmStartedSignal() []byte {
-	vmId := appendString(nil, 1, currentOwnerID())
-	vmId = appendString(vmId, 2, vmName)
-	b := appendBytes(nil, 1, vmId)
-	b = appendUint64(b, 3, 1) // status = VM_STATUS_RUNNING
+	b := appendString(nil, 1, vmName)
+	b = appendString(b, 2, currentOwnerID())
+	b = appendBytes(b, 3, encodeVmInfo())
+	b = appendUint64(b, 4, 1) // status = VM_STATUS_RUNNING
 	return b
 }
 
@@ -491,18 +492,21 @@ type vmConcierge struct {
 }
 
 func (v *vmConcierge) StartVm(req []byte, fds []dbus.UnixFD) ([]byte, *dbus.Error) {
-    fields := decodeStringFields(req)
-    log.Printf("StartVm called fd_count=%d strings=%v owner=%q", len(fds), fields, currentOwnerID())
-    markSessionReady()
-    go func() {
-        time.Sleep(200 * time.Millisecond)
-        if err := v.conn.Emit(conciergeObj, conciergeIface+".VmStartedSignal", encodeVmStartedSignal()); err != nil {
-            log.Printf("StartVm: VmStartedSignal emit FAILED: %v", err)
-        } else {
-            log.Printf("StartVm: emitted VmStartedSignal owner=%q vm=%q", currentOwnerID(), vmName)
-        }
-    }()
-    return encodeStartVmResponse(), nil
+	fields := decodeStringFields(req)
+	if id := fields[7]; id != "" {
+		setOwnerID("StartVm", id)
+	}
+	log.Printf("StartVm called fd_count=%d strings=%v owner=%q", len(fds), fields, currentOwnerID())
+	markSessionReady()
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		if err := v.conn.Emit(conciergeObj, conciergeIface+".VmStartedSignal", encodeVmStartedSignal()); err != nil {
+			log.Printf("StartVm: VmStartedSignal emit FAILED: %v", err)
+		} else {
+			log.Printf("StartVm: emitted VmStartedSignal owner=%q vm=%q", currentOwnerID(), vmName)
+		}
+	}()
+	return encodeStartVmResponse(), nil
 }
 
 func (v *vmConcierge) GetVmLaunchAllowed(req []byte) ([]byte, *dbus.Error) {
@@ -546,9 +550,9 @@ func (v *vmConcierge) CreateDiskImage(req []byte, fds []dbus.UnixFD) ([]byte, *d
 }
 
 type vmCicerone struct {
-    conn *dbus.Conn
-    mu   sync.RWMutex
-    apps []desktopApp
+	conn *dbus.Conn
+	mu   sync.RWMutex
+	apps []desktopApp
 }
 
 func (c *vmCicerone) ListRunningContainers(req []byte) ([]byte, *dbus.Error) {
@@ -687,19 +691,19 @@ func (c *vmCicerone) StartLxd(req []byte) ([]byte, *dbus.Error) {
 }
 
 func (c *vmCicerone) StartLxdContainer(req []byte) ([]byte, *dbus.Error) {
-    fields := decodeStringFields(req)
-    log.Printf("StartLxdContainer called strings=%v current_owner=%q", fields, currentOwnerID())
-    learnOwnerID("StartLxdContainer", fields)
-    go func() {
-        time.Sleep(300 * time.Millisecond)
-        log.Printf("ContainerStarted: emitting owner=%q vm=%q container=%q", currentOwnerID(), vmName, containerName)
-        if err := c.conn.Emit(ciceroneObj, ciceroneIface+".ContainerStarted", encodeContainerStarted()); err != nil {
-            log.Printf("ContainerStarted emit FAILED: %v", err)
-        } else {
-            log.Printf("ContainerStarted emitted successfully")
-        }
-    }()
-    return appendUint64(nil, 1, 2), nil
+	fields := decodeStringFields(req)
+	log.Printf("StartLxdContainer called strings=%v current_owner=%q", fields, currentOwnerID())
+	learnOwnerID("StartLxdContainer", fields)
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		log.Printf("ContainerStarted: emitting owner=%q vm=%q container=%q", currentOwnerID(), vmName, containerName)
+		if err := c.conn.Emit(ciceroneObj, ciceroneIface+".ContainerStarted", encodeContainerStarted()); err != nil {
+			log.Printf("ContainerStarted emit FAILED: %v", err)
+		} else {
+			log.Printf("ContainerStarted emitted successfully")
+		}
+	}()
+	return appendUint64(nil, 1, 2), nil
 }
 
 func (c *vmCicerone) CreateLxdContainer(req []byte) ([]byte, *dbus.Error) {
